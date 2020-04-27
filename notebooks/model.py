@@ -1,34 +1,75 @@
+import json
+
+import numpy as np
+import numpy_financial as npf
+import pandas as pd
+
 HOURS_PER_DAY = 24
 DAYS_PER_YEAR = 365
+HOURS_PER_YEAR = DAYS_PER_YEAR * HOURS_PER_DAY
 MILLION = 1e6
+KW_TO_MW = 1000
+LB_TO_METRIC_TON = 0.000453592
+
 
 class DacComponent(object):
-    
-    def __init__(self, **params):
+    def __init__(self, params=None, eai_data=None):
 
-        self._params = params
-        
+        self._params = params or self._default_params()
+
         self.values = {}
-    
+
+    def _default_params(self):
+        with open(
+            '/Users/jhamman/CarbonPlan Dropbox/Joe Hamman/src/dac-costing/notebooks/params.json',
+            'r',
+        ) as f:
+            return json.load(f)
+
     @property
     def series(self):
         if not self.values:
             self.compute()
         return pd.Series(self.values)
 
+    def compute(self):
+        raise NotImplementedError()
+        return self
+
+    def lead_time_mult(self):
+        '''replaces cells =Q5:AB158 in `WACC Table Project Lead Time`'''
+        rate = self._params['WACC [%]']
+        time = self._params['DAC Section Lead Time [years]']
+
+        vals = np.zeros(time)
+        vals[0] = (1 + rate) * (1 / time)
+        for t in range(1, time):
+            vals[t] = np.sum(vals[:t]) * rate + (1 + rate) * (1 / time)
+        return vals.sum()
+
+    def recovery_factor(self):
+        return -npf.pmt(self._params['WACC [%]'], self._params['Economic Lifetime [years]'], 1)
+
 
 class BatterySection(DacComponent):
-    
-    def compute(self):
-        
+    def __init__(self, **params):
+
+        super().__init__(**params)
+
+        self._tech = self._params['Technology']['Battery Storage']
+
+    def compute(self, e_vals):
+
         v = {}
-        
+
         # Battery Capacity [MWh]
         # TODO: move to params (sheets['report_data']['C64'])
-        v['Battery Capacity [MWh]'] =  base_energy_req * (HOURS_PER_DAY * (1 - e_vals['Planned Capacity Factor']) )  
+        v['Battery Capacity [MWh]'] = e_vals['Base Energy Requierement [MW]'] * (
+            HOURS_PER_DAY * (1 - e_vals['Planned Capacity Factor'])
+        )
 
         # Round Trip Effciency
-        v['Round Trip Effciency'] = eai_df.loc['Efficiency (Thermal or Round Trip)', 'Battery Storage']
+        v['Round Trip Effciency'] = self._tech['Efficiency (Thermal or Round Trip)']
 
         # Battery Capacity Needed [MWh]
         v['Battery Capacity Needed [MWh]'] = v['Battery Capacity [MWh]'] / v['Round Trip Effciency']
@@ -37,36 +78,57 @@ class BatterySection(DacComponent):
         v['Increased [MWh]'] = v['Battery Capacity Needed [MWh]'] - v['Battery Capacity [MWh]']
 
         # Increased Solar/Wind Need
-        v['Increased Need [MW]'] = v['Increased [MWh]'] / (HOURS_PER_DAY * e_vals['Planned Capacity Factor'])
+        v['Increased Need [MW]'] = v['Increased [MWh]'] / (
+            HOURS_PER_DAY * e_vals['Planned Capacity Factor']
+        )
 
         # Battery Capital Cost [M$]
-        v['Battery Capital Cost [M$]'] = eai_df.loc['Base Plant Cost [M$]', 'Battery Storage'] * (v['Battery Capacity Needed [MWh]'] / eai_df.loc['Battery Capacity [MWhr]', 'Battery Storage']) ** scaling_factors.loc['Battery Storage', 'Scaling Factor']
+        v['Battery Capital Cost [M$]'] = (
+            self._tech['Base Plant Cost [M$]']
+            * (v['Battery Capacity Needed [MWh]'] / self._tech['Battery Capacity [MWhr]'])
+            ** self._tech['Scaling Factor']
+        )
 
         # Battery Fixed O&M [$/tCO2eq]
-        v['Battery Fixed O&M [$/tCO2eq]'] = (eai_df.loc['Base Plant Annual Fixed O&M [$M]', 'Battery Storage'] * (v['Battery Capacity Needed [MWh]'] / eai_df.loc['Battery Capacity [MWhr]', 'Battery Storage']) ** scaling_factors.loc['Battery Storage', 'Scaling Factor']) * MILLION / self._params['Scale [tCO2/year]']
+        v['Battery Fixed O&M [$/tCO2eq]'] = (
+            (
+                self._tech['Base Plant Annual Fixed O&M [$M]']
+                * (v['Battery Capacity Needed [MWh]'] / self._tech['Battery Capacity [MWhr]'])
+                ** self._params['scaling_factors'].loc['Battery Storage', 'Scaling Factor']
+            )
+            * MILLION
+            / self._params['Scale [tCO2/year]']
+        )
 
         # Battery Variable O&M [$/tCO2eq]
-        v['Battery Variable O&M [$/tCO2eq]'] = eai_df.loc['Variable O&M [$/MWhr]', 'Battery Storage'] * v['Battery Capacity [MWh]'] / self._params['Scale [tCO2/year]'] * DAYS_PER_YEAR
-        
+        v['Battery Variable O&M [$/tCO2eq]'] = (
+            self._tech['Variable O&M [$/MWhr]']
+            * v['Battery Capacity [MWh]']
+            / self._params['Scale [tCO2/year]']
+            * DAYS_PER_YEAR
+        )
+
         self.values.update(v)
-        
+
         return self
 
 
 class EnergySection(DacComponent):
-    
     def __init__(self, source, battery=None, **params):
-        
-        self.source = source
-        
+
+        self._source = source
+        assert self._source in ['NGCC w/ CCS', 'Advanced NGCC', 'Solar', 'Wind']
+
         if battery is None or isinstance(battery, BatterySection):
             self.battery = battery
         else:
-            raise TypeError('Expected a BatterySection ')
-        
+            raise TypeError('Expected a BatterySection')
+
         super().__init__(**params)
 
-    def compute(self, base_energy_requirement, params, scenario='NGCC w/ CCS'):
+        self._tech = self._params['Technology'][self._source]
+
+    def compute(self):
         '''
         Calculate the energy requirements of a single component of a DAC system (e.g. electric or thermal)
 
@@ -79,87 +141,134 @@ class EnergySection(DacComponent):
         params : dict
             Dictionary of parameters.
 
-        scenario : str
+        self._source : str
             Generation technology.
         '''
 
         v = {}
 
         # Operational Hours [h/yr]
-        operational_hours = params['DAC Capacity Factor'] * 365 * 24
+        operational_hours = self._params['DAC Capacity Factor'] * HOURS_PER_YEAR
 
         # Planned Capacity Factor
-        v['Planned Capacity Factor'] = eai_df.loc['Availability', scenario]
+        v['Planned Capacity Factor'] = self._tech['Availability']
 
-        # Electric Power Requierement [MW]
-        # aka low value case in C1
-        v['Base Energy Requierement [MW]'] = base_energy_requirement
+        # Electric Power Requierement [MW] (aka low value case in C1)
+        v['Base Energy Requierement [MW]'] = self._params['Base Energy Requierement [MW]']
 
         # calcuate battery params now
-        # For now, I'm just computing the battery requirements when the capacity is less than 1. Will need to revisit for C2C.
-        if v['Planned Capacity Factor'] < 1:
-            v.update(calc_battery_requirements(v['Base Energy Requierement [MW]'], v, self._params))
+        if self.battery:
+            v.update(self.battery.compute(v))
 
         # Plant Size [MW]
-        v['Plant Size [MW]'] = (v['Base Energy Requierement [MW]'] / v['Planned Capacity Factor']) + v.get('Increased Need [MW]', 0.)
+        v['Plant Size [MW]'] = v['Base Energy Requierement [MW]'] / v['Planned Capacity Factor']
+        if self.battery:
+            v['Plant Size [MW]'] += v['Increased Need [MW]']
 
         # Overnight Cost [M$]
-        scaling_key = scaling_scenarios[scenario]
-        v['Overnight Cost [M$]'] = eai_df.loc['Base Plant Cost [M$]', scenario] * (v['Plant Size [MW]'] / eai_df.loc['Plant Size [MW]', scenario])**scaling_factors.loc[scaling_key, 'Scaling Factor']
+        scaling_key = self._params['scaling_self._sources'][self._source]
+        v['Overnight Cost [M$]'] = (
+            self._tech['Base Plant Cost [M$]']
+            * (v['Plant Size [MW]'] / self._tech['Plant Size [MW]'])
+            ** self._params['scaling_factors'].loc[scaling_key, 'Scaling Factor']
+        )
 
         # Lead Time Multiplier
-        v['Lead Time Multiplier'] = calc_lead_time_mult(self._params['WACC [%]'], int(eai_df.loc['Lead Time [Years]', scenario]))  # Note: this leads to rounding differences that are non-trivial   
+        v['Lead Time Multiplier'] = self.lead_time_mult()
 
-        # Capital Cost [M$] 
+        # Capital Cost [M$]
         v['Capital Cost [M$]'] = v['Overnight Cost [M$]'] * v['Lead Time Multiplier']
 
         # Total Capital Cost [M$]
-        v['Total Capital Cost [M$]'] = v['Capital Cost [M$]'] + v.get('Battery Capital Cost [M$]', 0.)
+        v['Total Capital Cost [M$]'] = v['Capital Cost [M$]']
+        if self.battery:
+            v['Total Capital Cost [M$]'] += v['Battery Capital Cost [M$]']
 
         # Annual Capital Recovery Factor
-        annual_capital_recovery_factor = -npf.pmt(self._params['WACC [%]'], self._params['Economic Lifetime [years]'], 1)
+        annual_capital_recovery_factor = self.recovery_factor()
 
         # Capital Recovery [$/tCO2eq]
-        v['Capital Recovery [$/tCO2eq]'] = v['Total Capital Cost [M$]'] * annual_capital_recovery_factor * 1e6 / self._params['Scale [tCO2/year]']
+        v['Capital Recovery [$/tCO2eq]'] = (
+            v['Total Capital Cost [M$]']
+            * annual_capital_recovery_factor
+            * MILLION
+            / self._params['Scale [tCO2/year]']
+        )
 
         # Power Fixed O&M [$/tCO2eq]
-        v['Power Fixed O&M [$/tCO2eq]'] = (eai_df.loc['Base Plant Annual Fixed O&M [$M]', scenario] * (v['Plant Size [MW]'] / eai_df.loc['Plant Size [MW]', scenario]) ** scaling_factors.loc[scaling_key, 'Scaling Factor']) * 1e6 / self._params['Scale [tCO2/year]']
+        v['Power Fixed O&M [$/tCO2eq]'] = (
+            (
+                self._tech['Base Plant Annual Fixed O&M [$M]']
+                * (v['Plant Size [MW]'] / self._tech['Plant Size [MW]'])
+                ** self._params['scaling_factors'].loc[scaling_key, 'Scaling Factor']
+            )
+            * MILLION
+            / self._params['Scale [tCO2/year]']
+        )
 
         # Power Variable O&M [$/tCO2eq]
-        v['Power Variable O&M [$/tCO2eq]'] = eai_df.loc['Variable O&M [$/MWhr]', scenario] * v['Plant Size [MW]'] * operational_hours / self._params['Scale [tCO2/year]']
+        v['Power Variable O&M [$/tCO2eq]'] = (
+            self._tech['Variable O&M [$/MWhr]']
+            * v['Plant Size [MW]']
+            * operational_hours
+            / self._params['Scale [tCO2/year]']
+        )
 
         # Total Fixed O&M [$/tCO2eq]
-        v['Total Fixed O&M [$/tCO2eq]'] = v['Power Fixed O&M [$/tCO2eq]'] + v.get('Battery Fixed O&M [$/tCO2eq]', 0.)
+        v['Total Fixed O&M [$/tCO2eq]'] = v['Power Fixed O&M [$/tCO2eq]']
+        if self.battery:
+            v['Total Fixed O&M [$/tCO2eq]'] += v['Battery Fixed O&M [$/tCO2eq]']
 
         # Total Variable O&M [$/tCO2eq]
-        v['Total Variable O&M [$/tCO2eq]'] = v['Power Variable O&M [$/tCO2eq]'] + v.get('Battery Variable O&M [$/tCO2eq]', 0.)
+        v['Total Variable O&M [$/tCO2eq]'] = v['Power Variable O&M [$/tCO2eq]']
+        if self.battery:
+            v['Total Variable O&M [$/tCO2eq]'] += v['Battery Variable O&M [$/tCO2eq]']
 
         # Natural Gas Use [mmBTU/tCO2eq]
-        heat_rate = eai_df.loc['Final Heat Rate [BTU/kWh]', scenario]
+        heat_rate = self._tech['Final Heat Rate [BTU/kWh]']
         if pd.notnull(heat_rate):
-            v['Natural Gas Use [mmBTU/tCO2eq]'] = operational_hours * v['Plant Size [MW]'] * 1000 * eai_df.loc['Final Heat Rate [BTU/kWh]', scenario] / 1e6 / self._params['Scale [tCO2/year]']
+            v['Natural Gas Use [mmBTU/tCO2eq]'] = (
+                operational_hours
+                * v['Plant Size [MW]']
+                * KW_TO_MW
+                * self._tech['Final Heat Rate [BTU/kWh]']
+                / MILLION
+                / self._params['Scale [tCO2/year]']
+            )
         else:
-            v['Natural Gas Use [mmBTU/tCO2eq]'] = 0.
+            v['Natural Gas Use [mmBTU/tCO2eq]'] = 0.0
 
         # Natural Gas Cost [$/tCO2eq]
-        v['Natural Gas Cost [$/tCO2eq]'] = v['Natural Gas Use [mmBTU/tCO2eq]'] * self._params['Natural Gas Cost [$/mmBTU]']
+        v['Natural Gas Cost [$/tCO2eq]'] = (
+            v['Natural Gas Use [mmBTU/tCO2eq]'] * self._params['Natural Gas Cost [$/mmBTU]']
+        )
 
         # Emitted tCO2eq/tCO2
-        v['Emitted tCO2eq/tCO2'] = v['Natural Gas Use [mmBTU/tCO2eq]'] * eai_df.loc['Total CO2 eq [lb/mmbtu]', scenario] * 0.454 / 1000 * (1 - percent_capture.get(scenario, 0.))
+        v['Emitted tCO2eq/tCO2'] = (
+            v['Natural Gas Use [mmBTU/tCO2eq]']
+            * self._tech['Total CO2 eq [lb/mmbtu]']
+            * LB_TO_METRIC_TON
+            * (1 - self._tech['Capture Efficiency'])
+        )
 
         # Total Cost [$/tCO2eq gross]
-        v['Total Cost [$/tCO2eq gross]'] = v['Capital Recovery [$/tCO2eq]'] + v['Total Fixed O&M [$/tCO2eq]'] + v['Total Variable O&M [$/tCO2eq]']
+        v['Total Cost [$/tCO2eq gross]'] = (
+            v['Capital Recovery [$/tCO2eq]']
+            + v['Total Fixed O&M [$/tCO2eq]']
+            + v['Total Variable O&M [$/tCO2eq]']
+        )
 
         # Total Cost [$/tCO2eq net]
-        v['Total Cost [$/tCO2eq net]'] = v['Total Cost [$/tCO2eq gross]'] / (1 - v['Emitted tCO2eq/tCO2'])  # TODO: K62 is the tCO2eq/tCO2 field from the thermal section
+        v['Total Cost [$/tCO2eq net]'] = v['Total Cost [$/tCO2eq gross]'] / (
+            1 - v['Emitted tCO2eq/tCO2']
+        )  # TODO: K62 is the tCO2eq/tCO2 field from the thermal section
 
         self.values.update(v)
-        
+
         return self
 
 
 class DacSection(DacComponent):
-    
     def compute(self):
         '''This section needs some spot checking. Not sure if we just have some propagating round off differences or something bigger...'''
 
@@ -169,16 +278,20 @@ class DacSection(DacComponent):
         v['Total Capital Cost [M$]'] = self._params['Total Capex [$]']
 
         # Lead Time Multiplier
-        v['Lead Time Multiplier'] = calc_lead_time_mult(self._params['WACC [%]'], self._params['DAC Section Lead Time [years]'])  # Note: this leads to rounding differences that are non-trivial
-        v['Lead Time Multiplier'] = 1.16
-        # Capital Cost (including Lead Time) [M$]
-        v['Capital Cost (including Lead Time) [M$]'] = v['Total Capital Cost [M$]'] * v['Lead Time Multiplier']
+        v['Lead Time Multiplier'] = self.lead_time_mult()
 
-        # Annual Capital Recovery Factor
-        recovery_factor = -npf.pmt(self._params['WACC [%]'], self._params['Economic Lifetime [years]'], 1)
+        # Capital Cost (including Lead Time) [M$]
+        v['Capital Cost (including Lead Time) [M$]'] = (
+            v['Total Capital Cost [M$]'] * v['Lead Time Multiplier']
+        )
 
         # Capital Recovery [$/tCO2eq]
-        v['Capital Recovery [$/tCO2eq]'] =  v['Total Capital Cost [M$]'] * recovery_factor * 1e6 / self._params['Scale [tCO2/year]']
+        v['Capital Recovery [$/tCO2eq]'] = (
+            v['Total Capital Cost [M$]']
+            * self.recovery_factor()
+            * MILLION
+            / self._params['Scale [tCO2/year]']
+        )
 
         # Fixed O+M [$/tCO2eq]
         v['Fixed O+M [$/tCO2eq]'] = self._params['Fixed O+M Costs [$/tCO2]']
@@ -187,80 +300,132 @@ class DacSection(DacComponent):
         v['Variable O+M [$/tCO2eq]'] = self._params['Varible O+M Cost [$/tCO2]']
 
         # Total Cost [$/tCO2]
-        v['Total Cost [$/tCO2]'] = v['Capital Recovery [$/tCO2eq]'] + v['Fixed O+M [$/tCO2eq]'] + v['Variable O+M [$/tCO2eq]']
+        v['Total Cost [$/tCO2]'] = (
+            v['Capital Recovery [$/tCO2eq]']
+            + v['Fixed O+M [$/tCO2eq]']
+            + v['Variable O+M [$/tCO2eq]']
+        )
 
-        # Total Cost [$/tCO2 net removed]
-        v['Total Cost [$/tCO2 net removed]'] = v['Total Cost [$/tCO2]'] / (1 - (ev['Emitted tCO2eq/tCO2'] + tv['Emitted tCO2eq/tCO2']))
+        # # Total Cost [$/tCO2 net removed]
+        # v['Total Cost [$/tCO2 net removed]'] = v['Total Cost [$/tCO2]'] / (
+        #     1 - (ev['Emitted tCO2eq/tCO2'] + tv['Emitted tCO2eq/tCO2'])
+        # )
 
         self.values.update(v)
-        
-        return self    
-    
 
-class DacModel(object):
-    
+        return self
+
+
+class DacModel(DacComponent):
     def __init__(self, electric, thermal, dac, **params):
-        
+
         self._electric = electric
         self._thermal = thermal
-        self._dac = thermal
+        self._dac = dac
         self._params = params
-        
 
-    def _combined_power_block_requirements(self, ev, tv):
-        
+    def _combined_power_block_requirements(self, source, ev, tv):
+
         '''this is probably only useful when the electric/thermal blocks are from the same source'''
 
         v = {}
 
         # Operational Hours [h/yr]
-        operational_hours = self._params['DAC Capacity Factor'] * 365 * 24
+        operational_hours = self._params['DAC Capacity Factor'] * HOURS_PER_YEAR
 
         # Power Plant Size
         v['Plant Size [MW]'] = ev['Plant Size [MW]'] + tv['Plant Size [MW]']
 
         # Overnight Cost [M$]
-        scaling_key = scaling_scenarios[scenario]
-        v['Overnight Cost [M$]'] = eai_df.loc['Base Plant Cost [M$]', scenario] * (v['Plant Size [MW]'] / eai_df.loc['Plant Size [MW]', scenario])**scaling_factors.loc[scaling_key, 'Scaling Factor']
+        scaling_key = self._params['scaling_self._sources'][source]
+        v['Overnight Cost [M$]'] = (
+            self._params['eai_data'].loc['Base Plant Cost [M$]', source]
+            * (v['Plant Size [MW]'] / self._params['eai_data'].loc['Plant Size [MW]', source])
+            ** self._params['scaling_factors'].loc[scaling_key, 'Scaling Factor']
+        )
 
         # Lead Time Multiplier
-        v['Lead Time Multiplier'] = calc_lead_time_mult(self._params['WACC [%]'], int(eai_df.loc['Lead Time [Years]', scenario]))
+        v['Lead Time Multiplier'] = self.lead_time_mult()
 
-        # Capital Cost [M$] 
+        # Capital Cost [M$]
         v['Capital Cost [M$]'] = v['Overnight Cost [M$]'] * v['Lead Time Multiplier']
 
         # Power Fixed O&M [$/tCO2eq]
-        v['Power Fixed O&M [$/tCO2eq]'] = (eai_df.loc['Base Plant Annual Fixed O&M [$M]', scenario] * (v['Plant Size [MW]'] / eai_df.loc['Plant Size [MW]', scenario]) ** scaling_factors.loc[scaling_key, 'Scaling Factor']) * 1e6 / self._params['Scale [tCO2/year]']
+        v['Power Fixed O&M [$/tCO2eq]'] = (
+            (
+                self._params['eai_data'].loc['Base Plant Annual Fixed O&M [$M]', source]
+                * (v['Plant Size [MW]'] / self._params['eai_data'].loc['Plant Size [MW]', source])
+                ** self._params['scaling_factors'].loc[scaling_key, 'Scaling Factor']
+            )
+            * MILLION
+            / self._params['Scale [tCO2/year]']
+        )
 
         # Power Variable O&M [$/tCO2eq]
-        v['Power Variable O&M [$/tCO2eq]'] = eai_df.loc['Variable O&M [$/MWhr]', scenario] * v['Plant Size [MW]'] * operational_hours / self._params['Scale [tCO2/year]']
+        v['Power Variable O&M [$/tCO2eq]'] = (
+            self._params['eai_data'].loc['Variable O&M [$/MWhr]', source]
+            * v['Plant Size [MW]']
+            * operational_hours
+            / self._params['Scale [tCO2/year]']
+        )
 
         # Battery Capacity [MWh]
-        v['Battery Capacity [MWh]'] = ev['Battery Capacity Needed [MWh]'] + tv['Battery Capacity Needed [MWh]']
+        v['Battery Capacity [MWh]'] = (
+            ev['Battery Capacity Needed [MWh]'] + tv['Battery Capacity Needed [MWh]']
+        )
 
         # Battery Capital Cost [M$]
-        v['Battery Capital Cost [M$]'] = eai_df.loc['Base Plant Cost [M$]', 'Battery Storage'] * (v['Battery Capacity [MWh]'] / eai_df.loc['Battery Capacity [MWhr]', 'Battery Storage']) ** scaling_factors.loc['Battery Storage', 'Scaling Factor']
+        v['Battery Capital Cost [M$]'] = (
+            self._params['eai_data'].loc['Base Plant Cost [M$]', 'Battery Storage']
+            * (
+                v['Battery Capacity [MWh]']
+                / self._params['eai_data'].loc['Battery Capacity [MWhr]', 'Battery Storage']
+            )
+            ** self._params['scaling_factors'].loc['Battery Storage', 'Scaling Factor']
+        )
 
         # Battery Fixed O&M [$/tCO2eq]
-        v['Battery Fixed O&M [$/tCO2eq]'] = (eai_df.loc['Base Plant Annual Fixed O&M [$M]', 'Battery Storage'] * (v['Battery Capacity [MWh]'] / eai_df.loc['Battery Capacity [MWhr]', 'Battery Storage']) ** scaling_factors.loc['Battery Storage', 'Scaling Factor']) *1e6 / self._params['Scale [tCO2/year]']
+        v['Battery Fixed O&M [$/tCO2eq]'] = (
+            (
+                self._params['eai_data'].loc['Base Plant Annual Fixed O&M [$M]', 'Battery Storage']
+                * (
+                    v['Battery Capacity [MWh]']
+                    / self._params['eai_data'].loc['Battery Capacity [MWhr]', 'Battery Storage']
+                )
+                ** self._params['scaling_factors'].loc['Battery Storage', 'Scaling Factor']
+            )
+            * MILLION
+            / self._params['Scale [tCO2/year]']
+        )
 
         # Battery Variable O&M [$/tCO2eq]
-        v['Battery Variable O&M [$/tCO2eq]'] = eai_df.loc['Variable O&M [$/MWhr]', 'Battery Storage'] * v['Battery Capacity [MWh]'] / self._params['Scale [tCO2/year]'] * 365
+        v['Battery Variable O&M [$/tCO2eq]'] = (
+            self._params['eai_data'].loc['Variable O&M [$/MWhr]', 'Battery Storage']
+            * v['Battery Capacity [MWh]']
+            / self._params['Scale [tCO2/year]']
+            * DAYS_PER_YEAR
+        )
 
         # Total Capital Cost [M$]
-        v['Total Capital Cost [M$]'] = v['Capital Cost [M$]'] +  v['Battery Capital Cost [M$]']
-
-        # Annual Capital Recovery Factor
-        annual_capital_recovery_factor = -npf.pmt(self._params['WACC [%]'], self._params['Economic Lifetime [years]'], 1)
+        v['Total Capital Cost [M$]'] = v['Capital Cost [M$]'] + v['Battery Capital Cost [M$]']
 
         # Capital Recovery [$/tCO2eq]
-        v['Capital Recovery [$/tCO2eq]'] = v['Total Capital Cost [M$]'] * annual_capital_recovery_factor * 1e6 / self._params['Scale [tCO2/year]']
+        v['Capital Recovery [$/tCO2eq]'] = (
+            v['Total Capital Cost [M$]']
+            * self.recovery_factor()
+            * MILLION
+            / self._params['Scale [tCO2/year]']
+        )
 
         # Fixed O+M [$/tCO2eq]
-        v['Fixed O+M [$/tCO2eq]'] = v['Power Fixed O&M [$/tCO2eq]'] + v['Battery Fixed O&M [$/tCO2eq]']
+        v['Fixed O+M [$/tCO2eq]'] = (
+            v['Power Fixed O&M [$/tCO2eq]'] + v['Battery Fixed O&M [$/tCO2eq]']
+        )
 
         # Variable O+M [$/tCO2eq]
-        v['Variable O+M [$/tCO2eq]'] = v['Power Variable O&M [$/tCO2eq]'] + v['Battery Variable O&M [$/tCO2eq]']
+        v['Variable O+M [$/tCO2eq]'] = (
+            v['Power Variable O&M [$/tCO2eq]'] + v['Battery Variable O&M [$/tCO2eq]']
+        )
 
         return v
 
@@ -272,7 +437,9 @@ class DacModel(object):
         v['Total Power Capacity Required [MW]'] = ev['Plant Size [MW]'] + tv['Plant Size [MW]']
 
         # Total Battery Capacity Required [MWh]
-        v['Total Battery Capacity Required [MWh]'] = ev['Battery Capacity Needed [MWh]'] + tv['Battery Capacity Needed [MWh]']
+        v['Total Battery Capacity Required [MWh]'] = (
+            ev['Battery Capacity Needed [MWh]'] + tv['Battery Capacity Needed [MWh]']
+        )
 
         # Total Capital Cost [M$]
         v['Total Capital Cost [M$]'] = cv['Total Capital Cost [M$]']
@@ -287,57 +454,82 @@ class DacModel(object):
         v['Variable O+M [$/tCO2eq]'] = cv['Variable O+M [$/tCO2eq]']
 
         # NG Cost [$/tCO2eq]
-        v['Natural Gas Cost [$/tCO2eq]'] = ev['Natural Gas Cost [$/tCO2eq]'] + tv['Natural Gas Cost [$/tCO2eq]']
+        v['Natural Gas Cost [$/tCO2eq]'] = (
+            ev['Natural Gas Cost [$/tCO2eq]'] + tv['Natural Gas Cost [$/tCO2eq]']
+        )
 
         # Total Cost [$/tCO2]
-        v['Total Cost [$/tCO2]'] = v['Capital Recovery [$/tCO2eq]'] + v['Fixed O+M [$/tCO2eq]'] + v['Variable O+M [$/tCO2eq]'] + v['Natural Gas Cost [$/tCO2eq]']
+        v['Total Cost [$/tCO2]'] = (
+            v['Capital Recovery [$/tCO2eq]']
+            + v['Fixed O+M [$/tCO2eq]']
+            + v['Variable O+M [$/tCO2eq]']
+            + v['Natural Gas Cost [$/tCO2eq]']
+        )
 
         # Net Capture [tCO2/yr]
-        v['Net Capture [tCO2/yr]'] = self._params['Scale [tCO2/year]'] - self._params['Scale [tCO2/year]'] * (ev['Emitted tCO2eq/tCO2'] + tv['Emitted tCO2eq/tCO2'])
+        v['Net Capture [tCO2/yr]'] = self._params['Scale [tCO2/year]'] - self._params[
+            'Scale [tCO2/year]'
+        ] * (ev['Emitted tCO2eq/tCO2'] + tv['Emitted tCO2eq/tCO2'])
 
         # Total Cost [$/tCO2 net removed]
-        v['Total Cost [$/tCO2 net removed]'] = v['Total Cost [$/tCO2]'] / (1 - (ev['Emitted tCO2eq/tCO2'] + tv['Emitted tCO2eq/tCO2']))    
+        v['Total Cost [$/tCO2 net removed]'] = v['Total Cost [$/tCO2]'] / (
+            1 - (ev['Emitted tCO2eq/tCO2'] + tv['Emitted tCO2eq/tCO2'])
+        )
 
         return v
-    
-    
+
     def compute(self):
 
         ev = self._electric.compute()
         tv = self._thermal.compute()
-        if self._electric.kind == self.self._thermal.kind:
-            cv = combined_power_block_requirements(ev, tv, self._params, scenario)
-            tev = total_energy_block_costs(ev, tv, cv, self._params)
+        if self._electric._source == self._thermal._source:
+            cv = self._combined_power_block_requirements(self._electric._source, ev, tv)
+            tev = self._total_energy_block_costs(ev, tv, cv)
         else:
             raise ValueError('TODO: handle case with mismatched energy sources')
-        
-        v = {}       
+
+        dv = self._dac.compute()
+
+        v = {}
 
         # Total Capital Cost [M$]
-        v['Total Capital Cost [M$]'] = tev['Total Capital Cost [M$]'] + dv['Capital Cost (including Lead Time) [M$]']
-
-        # Annual Capital Recovery Factor
-        recovery_factor = -npf.pmt(self._params['WACC [%]'], self._params['Economic Lifetime [years]'], 1)
+        v['Total Capital Cost [M$]'] = (
+            tev['Total Capital Cost [M$]'] + dv['Capital Cost (including Lead Time) [M$]']
+        )
 
         # Capital Recovery [$/tCO2eq]
         # =K86*'Economic Parameters'!C6*10^6/'Report Data'!C3
-        v['Capital Recovery [$/tCO2eq]'] = v['Total Capital Cost [M$]'] * recovery_factor * 1e6 / self._params['Scale [tCO2/year]']
+        v['Capital Recovery [$/tCO2eq]'] = (
+            v['Total Capital Cost [M$]']
+            * self.recovery_factor()
+            * MILLION
+            / self._params['Scale [tCO2/year]']
+        )
 
         # Fixed O+M [$/tCO2eq]
         v['Fixed O+M [$/tCO2eq]'] = tev['Fixed O+M [$/tCO2eq]'] + dv['Fixed O+M [$/tCO2eq]']
 
         # Variable O+M [$/tCO2eq]
-        v['Variable O+M [$/tCO2eq]'] = tev['Variable O+M [$/tCO2eq]'] + dv['Variable O+M [$/tCO2eq]']
+        v['Variable O+M [$/tCO2eq]'] = (
+            tev['Variable O+M [$/tCO2eq]'] + dv['Variable O+M [$/tCO2eq]']
+        )
 
         # Natural Gas Cost [$/tCO2]
         v['Natural Gas Cost [$/tCO2]'] = tev['Natural Gas Cost [$/tCO2eq]']
 
         # Total Cost [$/tCO2]
-        v['Total Cost [$/tCO2]'] = v['Capital Recovery [$/tCO2eq]'] + v['Fixed O+M [$/tCO2eq]'] + v['Variable O+M [$/tCO2eq]'] + v['Natural Gas Cost [$/tCO2]']
+        v['Total Cost [$/tCO2]'] = (
+            v['Capital Recovery [$/tCO2eq]']
+            + v['Fixed O+M [$/tCO2eq]']
+            + v['Variable O+M [$/tCO2eq]']
+            + v['Natural Gas Cost [$/tCO2]']
+        )
 
         # Total Cost [$/tCO2 Net Removed]
-        v['Total Cost [$/tCO2 Net Removed]'] = tev['Total Cost [$/tCO2 net removed]'] + dv['Total Cost [$/tCO2 net removed]']
+        v['Total Cost [$/tCO2 Net Removed]'] = (
+            tev['Total Cost [$/tCO2 net removed]'] + dv['Total Cost [$/tCO2 net removed]']
+        )
 
         self.values.update(v)
-        
+
         return self
