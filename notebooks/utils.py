@@ -9,7 +9,7 @@ import gspread
 
 
 def clean_string(ser):
-    return pd.to_numeric(ser.str.replace('[\$,%]', '', regex=True), errors='ignore')
+    return pd.to_numeric(ser.str.replace('[\$,%]', '', regex=True).str.strip(), errors='ignore')
 
 
 class MySheet(object):
@@ -63,38 +63,32 @@ def default_params(sheets, scenario):
     if scenario == 'low':
         return {
             # report data
-            'scale': sheets['report_data']['C3'],
-            'dac_capacity_factor': sheets['report_data']['C4'],
-            'lead_time': sheets['report_data']['C6'],
-            'overnight_capex': sheets['report_data']['C21'],  # TODO: this references another sheet
-            'low_value_case': sheets['report_data']['C58'],
-            'thermal_requirement': sheets['report_data']['E67'],
-            'fixed_o_m_cost': sheets['report_data']['H32'],
-            'variable_o_m_cost': sheets['report_data']['H33'],
+            'Scale [tCO2/year]': sheets['report_data']['C3'],
+            'DAC Capacity Factor': sheets['report_data']['C4'],
+            'DAC Section Lead Time [years]': sheets['report_data']['C6'],
+            'Total Capex [$]': sheets['report_data']['C21'],  # TODO: this references another sheet
+            'Electric Power Requierement [MW]': sheets['report_data']['C58'],
+            'Thermal [GJ/tCO2]': sheets['report_data']['E67'],
+            'Fixed O+M Costs [$/tCO2]': sheets['report_data']['H32'],
+            'Varible O+M Cost [$/tCO2]': sheets['report_data']['H33'],
             # economic parameters
-            'lifetime': sheets['economic_parameters']['C4'],
-            'wacc': sheets['economic_parameters']['C5'],
-            'ng_cost': sheets['economic_parameters']['C7'],
-            'natural_gas_energy_scaling_factor': sheets['economic_parameters']['F5'],
-            # WACC
-            'npv': 1,  # TODO: WACC table
+            'Economic Lifetime [years]': sheets['economic_parameters']['C4'],
+            'WACC [%]': sheets['economic_parameters']['C5'],
+            'Natural Gas Cost [$/mmBTU]': sheets['economic_parameters']['C7'],
         }
     else:
         return {
             # report data
-            'scale': sheets['report_data']['C3'],
-            'dac_capacity_factor': sheets['report_data']['C4'],
-            'lead_time': sheets['report_data']['C6'],
-            'overnight_capex': sheets['report_data']['D21'],  # this changed, TODO: this references another sheet
-            'low_value_case': sheets['report_data']['D58'],  # this changed
-            'thermal_requirement': sheets['report_data']['F67'],  # this changed 
-            'fixed_o_m_cost': sheets['report_data']['I32'],  # this changed 
-            'variable_o_m_cost': sheets['report_data']['I33'],  # this changed
+            'Scale [tCO2/year]': sheets['report_data']['C3'],
+            'DAC Capacity Factor': sheets['report_data']['C4'],
+            'DAC Section Lead Time [years]': sheets['report_data']['C6'],
+            'Total Capex [$]': sheets['report_data']['D21'],  # this changed, TODO: this references another sheet
+            'Electric Power Requierement [MW]': sheets['report_data']['D58'],  # this changed
+            'Thermal [GJ/tCO2]': sheets['report_data']['F67'],  # this changed 
+            'Fixed O+M Costs [$/tCO2]': sheets['report_data']['I32'],  # this changed 
+            'Varible O+M Cost [$/tCO2]': sheets['report_data']['I33'],  # this changed
             # economic parameters
-            'lifetime': sheets['economic_parameters']['C4'],
-            'wacc': sheets['economic_parameters']['C5'],
-            'ng_cost': sheets['economic_parameters']['C7'],
-            'natural_gas_energy_scaling_factor': sheets['economic_parameters']['F5'],
-            # WACC
-            'npv': 1,  # TODO: WACC table
+            'Economic Lifetime [years]': sheets['economic_parameters']['C4'],
+            'WACC [%]': sheets['economic_parameters']['C5'],
+            'Natural Gas Cost [$/mmBTU]': sheets['economic_parameters']['C7'],
         }
