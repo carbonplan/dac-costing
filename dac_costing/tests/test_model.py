@@ -1,5 +1,3 @@
-import pytest
-
 from dac_costing.model import BatterySection, DacModel, DacSection, EnergySection
 
 
@@ -21,7 +19,6 @@ def test_to_pandas():
     assert len(dac.series)
 
 
-@pytest.mark.xfail(reason="missing natural gas use in thermal block")
 def test_c1_natural_gas():
     params = {"Base Energy Requierement [MW]": 47}
     electric = EnergySection("NGCC w/ CCS", battery=None, **params)
