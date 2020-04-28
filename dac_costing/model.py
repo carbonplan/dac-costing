@@ -15,31 +15,47 @@ LB_TO_METRIC_TON = 0.000453592
 
 
 class DacComponent(object):
+    """
+    Base DAC Component Class
+
+    Parameters
+    ----------
+    **params
+        Model parameters
+    """
+
     def __init__(self, **params):
 
-        self._params = params or self._default_params()
+        self._params = self._default_params()
+        self._params.update(params)
 
         self.values = {}
 
     def _default_params(self):
+        """ load default parameters """
         dir_path = os.path.dirname(os.path.realpath(__file__))
         with open(os.path.join(dir_path, "data", "parameters.json")) as f:
             return json.load(f)
 
     @property
     def series(self):
+        """ return a pandas.Series view of the components values """
         if not self.values:
             self.compute()
         return pd.Series(self.values)
 
     def compute(self):
+        """ compute this components values """
         raise NotImplementedError()
         return self
 
-    def lead_time_mult(self):
-        """replaces cells =Q5:AB158 in `WACC Table Project Lead Time`"""
+    def lead_time_mult(self, time):
+        """ replaces cells =Q5:AB158 in `WACC Table Project Lead Time`
+
+        TODO: needs better doc and review from Noah.
+        """
         rate = self._params["WACC [%]"]
-        time = self._params["DAC Section Lead Time [years]"]
+        time = int(time)
 
         vals = np.zeros(time)
         vals[0] = (1 + rate) * (1 / time)
@@ -48,10 +64,20 @@ class DacComponent(object):
         return vals.sum()
 
     def recovery_factor(self):
+        """ calculate the capital recovery factor """
         return -npf.pmt(self._params["WACC [%]"], self._params["Economic Lifetime [years]"], 1)
 
 
 class BatterySection(DacComponent):
+    """
+    Batter Section Component
+
+    Parameters
+    ----------
+    **params
+        Model parameters
+    """
+
     def __init__(self, **params):
 
         super().__init__(**params)
@@ -59,6 +85,13 @@ class BatterySection(DacComponent):
         self._tech = self._params["Technology"]["Battery Storage"]
 
     def compute(self, e_vals):
+        """ compute the battery section values
+
+        Parameters
+        ----------
+        e_vals : dict
+            Values from the energy section that will use this battery.
+        """
         v = {}
 
         # Battery Capacity [MWh]
@@ -113,6 +146,21 @@ class BatterySection(DacComponent):
 
 
 class EnergySection(DacComponent):
+    """
+    Energy Section Component
+
+    This section can be used for either electric or thermal energy demand
+
+    Parameters
+    ----------
+    source : str
+        Energy source. Valid values include: {'NGCC w/ CCS', 'Advanced NGCC', 'Solar', 'Wind'}
+    battery : BatterySection, optional
+        Battery component.
+    **params
+        Model parameters
+    """
+
     def __init__(self, source, battery=None, **params):
 
         self._source = source
@@ -128,21 +176,7 @@ class EnergySection(DacComponent):
         self._tech = self._params["Technology"][self._source]
 
     def compute(self):
-        """
-        Calculate the energy requirements of a single component of a DAC system (e.g. electric or thermal)
-
-        Parameters
-        ----------
-        base_energy_requirement : float
-            Baseline energy demand [MW].
-            This parameter is refered to as `Electric Power Requierement [MW]` or `Thermal [MW]` or `Low Value Case`.
-
-        params : dict
-            Dictionary of parameters.
-
-        self._source : str
-            Generation technology.
-        """
+        """ compute the energy section values """
 
         v = {}
 
@@ -172,7 +206,7 @@ class EnergySection(DacComponent):
         )
 
         # Lead Time Multiplier
-        v["Lead Time Multiplier"] = self.lead_time_mult()
+        v["Lead Time Multiplier"] = self.lead_time_mult(self._tech["Lead Time [Years]"])
 
         # Capital Cost [M$]
         v["Capital Cost [M$]"] = v["Overnight Cost [M$]"] * v["Lead Time Multiplier"]
@@ -267,8 +301,19 @@ class EnergySection(DacComponent):
 
 
 class DacSection(DacComponent):
+    """
+    DAC Section Component
+
+    This section represents the non-energy costs associated with a DAC facility
+
+    Parameters
+    ----------
+    **params
+        Model parameters
+    """
+
     def compute(self):
-        """This section needs some spot checking. Not sure if we just have some propagating round off differences or something bigger..."""
+        """ compute the DAC section values """
 
         v = {}
 
@@ -276,7 +321,9 @@ class DacSection(DacComponent):
         v["Total Capital Cost [M$]"] = self._params["Total Capex [$]"]
 
         # Lead Time Multiplier
-        v["Lead Time Multiplier"] = self.lead_time_mult()
+        v["Lead Time Multiplier"] = self.lead_time_mult(
+            self._params["DAC Section Lead Time [years]"]
+        )
 
         # Capital Cost (including Lead Time) [M$]
         v["Capital Cost (including Lead Time) [M$]"] = (
@@ -315,6 +362,21 @@ class DacSection(DacComponent):
 
 
 class DacModel(DacComponent):
+    """
+    Composite DAC Model Component
+
+    Parameters
+    ----------
+    electric : EnergySection
+        Electric energy component.
+    thermal : EnergySection
+        Thermal energy component.
+    dac : DacSection
+        DAC section component.
+    **params
+        Model parameters
+    """
+
     def __init__(self, electric, thermal, dac, **params):
 
         self._electric = electric
@@ -324,8 +386,22 @@ class DacModel(DacComponent):
         super().__init__(**params)
 
     def _combined_power_block_requirements(self, source, ev, tv):
+        """ compute the combined power block requirements
 
-        """this is probably only useful when the electric/thermal blocks are from the same source"""
+        Parameters
+        ----------
+        source : str
+            Energy source.
+        ev : dict
+            Electric section values
+        tv : dict
+            Thermal section values
+
+        Returns
+        -------
+        v : dict
+            Combined power block values
+        """
 
         v = {}
 
@@ -344,7 +420,7 @@ class DacModel(DacComponent):
         )
 
         # Lead Time Multiplier
-        v["Lead Time Multiplier"] = self.lead_time_mult()
+        v["Lead Time Multiplier"] = self.lead_time_mult(tech["Lead Time [Years]"])
 
         # Capital Cost [M$]
         v["Capital Cost [M$]"] = v["Overnight Cost [M$]"] * v["Lead Time Multiplier"]
@@ -428,7 +504,22 @@ class DacModel(DacComponent):
         return v
 
     def _total_energy_block_costs(self, ev, tv, cv):
+        """ compute the total energy block costs
 
+        Parameters
+        ----------
+        ev : dict
+            Electric section values
+        tv : dict
+            Thermal section values
+        cv : dict
+            Combined energy block values
+
+        Returns
+        -------
+        v : dict
+            Total energy block values
+        """
         v = {}
 
         # Total Power Capacity Required [MW]
@@ -477,6 +568,7 @@ class DacModel(DacComponent):
         return v
 
     def compute(self):
+        """ compute the composite DAC model's values """
 
         ev = self._electric.compute().values
         tv = self._thermal.compute().values
