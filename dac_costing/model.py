@@ -1,4 +1,5 @@
 import json
+import os
 
 import numpy as np
 import numpy_financial as npf
@@ -21,10 +22,8 @@ class DacComponent(object):
         self.values = {}
 
     def _default_params(self):
-        with open(
-            "/Users/jhamman/CarbonPlan Dropbox/Joe Hamman/src/dac-costing/notebooks/params.json",
-            "r",
-        ) as f:
+        dir_path = os.path.dirname(os.path.realpath(__file__))
+        with open(os.path.join(dir_path, "data", "parameters.json")) as f:
             return json.load(f)
 
     @property

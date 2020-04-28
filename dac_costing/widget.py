@@ -10,11 +10,11 @@ from ipywidgets import (
     IntSlider,
     Label,
     VBox,
-    fixed,
-    interact,
-    interact_manual,
-    interactive,
 )
+
+
+def default_params(case):
+    return {}
 
 
 class CostWidget(object):
@@ -57,7 +57,7 @@ class CostWidget(object):
 
         def set_defaults(change):
             case = change["new"]
-            p = default_params(sheets, case.lower())  # TODO
+            p = default_params(case.lower())  # TODO
             app_params.update(p)
             for k, v in app_params.items():
                 if k in all_sliders:

@@ -1,15 +1,14 @@
 import ast
 import functools
 
+import gspread
 import numpy as np
 import pandas as pd
-
-import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 
 
 def clean_string(ser):
-    return pd.to_numeric(ser.str.replace("[\$,%]", "", regex=True).str.strip(), errors="ignore")
+    return pd.to_numeric(ser.str.replace(r"[\$,%]", "", regex=True).str.strip(), errors="ignore")
 
 
 class MySheet(object):
