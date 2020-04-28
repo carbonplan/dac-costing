@@ -95,7 +95,6 @@ class BatterySection(DacComponent):
         v = {}
 
         # Battery Capacity [MWh]
-        # TODO: move to params (sheets['report_data']['C64'])
         v["Battery Capacity [MWh]"] = e_vals["Base Energy Requierement [MW]"] * (
             HOURS_PER_DAY * (1 - e_vals["Planned Capacity Factor"])
         )
@@ -154,7 +153,7 @@ class EnergySection(DacComponent):
     Parameters
     ----------
     source : str
-        Energy source. Valid values include: {'NGCC w/ CCS', 'Advanced NGCC', 'Solar', 'Wind'}
+        Energy source. Valid values include: {'NGCC w/ CCS', 'Advanced NGCC', 'Solar', 'Wind', 'Advanced Nuclear'}
     battery : BatterySection, optional
         Battery component.
     **params
@@ -164,7 +163,7 @@ class EnergySection(DacComponent):
     def __init__(self, source, battery=None, **params):
 
         self._source = source
-        assert self._source in ["NGCC w/ CCS", "Advanced NGCC", "Solar", "Wind"]
+        assert self._source in ["NGCC w/ CCS", "Advanced NGCC", "Solar", "Wind", "Advanced Nuclear"]
 
         if isinstance(battery, BatterySection) or battery is None:
             self.battery = battery
@@ -257,6 +256,7 @@ class EnergySection(DacComponent):
             v["Total Variable O&M [$/tCO2eq]"] += v["Battery Variable O&M [$/tCO2eq]"]
 
         # Natural Gas Use [mmBTU/tCO2eq]
+        # TODO: need to handle natural gas use in thermal block when plant size is 0.
         heat_rate = self._tech["Final Heat Rate [BTU/kWh]"]
         if pd.notnull(heat_rate):
             v["Natural Gas Use [mmBTU/tCO2eq]"] = (
@@ -293,7 +293,7 @@ class EnergySection(DacComponent):
         # Total Cost [$/tCO2eq net]
         v["Total Cost [$/tCO2eq net]"] = v["Total Cost [$/tCO2eq gross]"] / (
             1 - v["Emitted tCO2eq/tCO2"]
-        )  # TODO: K62 is the tCO2eq/tCO2 field from the thermal section
+        )
 
         self.values.update(v)
 
@@ -338,17 +338,17 @@ class DacSection(DacComponent):
             / self._params["Scale [tCO2/year]"]
         )
 
-        # Fixed O+M [$/tCO2eq]
-        v["Fixed O+M [$/tCO2eq]"] = self._params["Fixed O+M Costs [$/tCO2]"]
+        # Fixed O&M [$/tCO2eq]
+        v["Fixed O&M [$/tCO2eq]"] = self._params["Fixed O&M Costs [$/tCO2]"]
 
-        # Variable O+M [$/tCO2eq]
-        v["Variable O+M [$/tCO2eq]"] = self._params["Varible O+M Cost [$/tCO2]"]
+        # Variable O&M [$/tCO2eq]
+        v["Variable O&M [$/tCO2eq]"] = self._params["Varible O&M Cost [$/tCO2]"]
 
         # Total Cost [$/tCO2]
         v["Total Cost [$/tCO2]"] = (
             v["Capital Recovery [$/tCO2eq]"]
-            + v["Fixed O+M [$/tCO2eq]"]
-            + v["Variable O+M [$/tCO2eq]"]
+            + v["Fixed O&M [$/tCO2eq]"]
+            + v["Variable O&M [$/tCO2eq]"]
         )
 
         # # Total Cost [$/tCO2 net removed]
@@ -443,42 +443,50 @@ class DacModel(DacComponent):
             / self._params["Scale [tCO2/year]"]
         )
 
-        # Battery Capacity [MWh]
-        v["Battery Capacity [MWh]"] = (
-            ev["Battery Capacity Needed [MWh]"] + tv["Battery Capacity Needed [MWh]"]
-        )
-
-        # Battery Capital Cost [M$]
-        v["Battery Capital Cost [M$]"] = (
-            self._params["Technology"]["Battery Storage"]["Base Plant Cost [M$]"]
-            * (
-                v["Battery Capacity [MWh]"]
-                / self._params["Technology"]["Battery Storage"]["Battery Capacity [MWhr]"]
+        if "Battery Capacity Needed [MWh]" in ev:
+            # Battery Capacity [MWh]
+            v["Battery Capacity [MWh]"] = (
+                ev["Battery Capacity Needed [MWh]"] + tv["Battery Capacity Needed [MWh]"]
             )
-            ** self._params["Technology"]["Battery Storage"]["Scaling Factor"]
-        )
 
-        # Battery Fixed O&M [$/tCO2eq]
-        v["Battery Fixed O&M [$/tCO2eq]"] = (
-            (
-                self._params["Technology"]["Battery Storage"]["Base Plant Annual Fixed O&M [$M]"]
+            # Battery Capital Cost [M$]
+            v["Battery Capital Cost [M$]"] = (
+                self._params["Technology"]["Battery Storage"]["Base Plant Cost [M$]"]
                 * (
                     v["Battery Capacity [MWh]"]
                     / self._params["Technology"]["Battery Storage"]["Battery Capacity [MWhr]"]
                 )
                 ** self._params["Technology"]["Battery Storage"]["Scaling Factor"]
             )
-            * MILLION
-            / self._params["Scale [tCO2/year]"]
-        )
 
-        # Battery Variable O&M [$/tCO2eq]
-        v["Battery Variable O&M [$/tCO2eq]"] = (
-            self._params["Technology"]["Battery Storage"]["Variable O&M [$/MWhr]"]
-            * v["Battery Capacity [MWh]"]
-            / self._params["Scale [tCO2/year]"]
-            * DAYS_PER_YEAR
-        )
+            # Battery Fixed O&M [$/tCO2eq]
+            v["Battery Fixed O&M [$/tCO2eq]"] = (
+                (
+                    self._params["Technology"]["Battery Storage"][
+                        "Base Plant Annual Fixed O&M [$M]"
+                    ]
+                    * (
+                        v["Battery Capacity [MWh]"]
+                        / self._params["Technology"]["Battery Storage"]["Battery Capacity [MWhr]"]
+                    )
+                    ** self._params["Technology"]["Battery Storage"]["Scaling Factor"]
+                )
+                * MILLION
+                / self._params["Scale [tCO2/year]"]
+            )
+
+            # Battery Variable O&M [$/tCO2eq]
+            v["Battery Variable O&M [$/tCO2eq]"] = (
+                self._params["Technology"]["Battery Storage"]["Variable O&M [$/MWhr]"]
+                * v["Battery Capacity [MWh]"]
+                / self._params["Scale [tCO2/year]"]
+                * DAYS_PER_YEAR
+            )
+        else:
+            v["Battery Capacity [MWh]"] = 0
+            v["Battery Capital Cost [M$]"] = 0
+            v["Battery Fixed O&M [$/tCO2eq]"] = 0
+            v["Battery Variable O&M [$/tCO2eq]"] = 0
 
         # Total Capital Cost [M$]
         v["Total Capital Cost [M$]"] = v["Capital Cost [M$]"] + v["Battery Capital Cost [M$]"]
@@ -491,19 +499,90 @@ class DacModel(DacComponent):
             / self._params["Scale [tCO2/year]"]
         )
 
-        # Fixed O+M [$/tCO2eq]
-        v["Fixed O+M [$/tCO2eq]"] = (
+        # Fixed O&M [$/tCO2eq]
+        v["Fixed O&M [$/tCO2eq]"] = (
             v["Power Fixed O&M [$/tCO2eq]"] + v["Battery Fixed O&M [$/tCO2eq]"]
         )
 
-        # Variable O+M [$/tCO2eq]
-        v["Variable O+M [$/tCO2eq]"] = (
+        # Variable O&M [$/tCO2eq]
+        v["Variable O&M [$/tCO2eq]"] = (
             v["Power Variable O&M [$/tCO2eq]"] + v["Battery Variable O&M [$/tCO2eq]"]
         )
 
         return v
 
-    def _total_energy_block_costs(self, ev, tv, cv):
+    def _total_energy_block_costs(self, ev, tv):
+        """ compute the total energy block costs
+
+        Parameters
+        ----------
+        ev : dict
+            Electric section values
+        tv : dict
+            Thermal section values
+
+        Returns
+        -------
+        v : dict
+            Total energy block values
+        """
+        v = {}
+
+        # Total Power Capacity Required [MW]
+        v["Total Power Capacity Required [MW]"] = ev["Plant Size [MW]"] + tv["Plant Size [MW]"]
+
+        # Total Battery Capacity Required [MWh]
+        if "Battery Capacity Needed [MWh]" in ev:
+            v["Total Battery Capacity Required [MWh]"] = (
+                ev["Battery Capacity Needed [MWh]"] + tv["Battery Capacity Needed [MWh]"]
+            )
+        else:
+            v["Total Battery Capacity Required [MWh]"] = 0.0
+
+        # Total Capital Cost [M$]
+        v["Total Capital Cost [M$]"] = ev["Total Capital Cost [M$]"] + tv["Total Capital Cost [M$]"]
+
+        # Capital Recovery [$/tCO2eq]
+        v["Capital Recovery [$/tCO2eq]"] = (
+            ev["Capital Recovery [$/tCO2eq]"] + tv["Capital Recovery [$/tCO2eq]"]
+        )
+
+        # Fixed O&M [$/tCO2eq]
+        v["Fixed O&M [$/tCO2eq]"] = (
+            ev["Total Fixed O&M [$/tCO2eq]"] + tv["Total Fixed O&M [$/tCO2eq]"]
+        )
+
+        # Variable O&M [$/tCO2eq]
+        v["Variable O&M [$/tCO2eq]"] = (
+            ev["Total Variable O&M [$/tCO2eq]"] + tv["Total Variable O&M [$/tCO2eq]"]
+        )
+
+        # NG Cost [$/tCO2eq]
+        v["Natural Gas Cost [$/tCO2eq]"] = (
+            ev["Natural Gas Cost [$/tCO2eq]"] + tv["Natural Gas Cost [$/tCO2eq]"]
+        )
+
+        # Total Cost [$/tCO2]
+        v["Total Cost [$/tCO2]"] = (
+            v["Capital Recovery [$/tCO2eq]"]
+            + v["Fixed O&M [$/tCO2eq]"]
+            + v["Variable O&M [$/tCO2eq]"]
+            + v["Natural Gas Cost [$/tCO2eq]"]
+        )
+
+        # Net Capture [tCO2/yr]
+        v["Net Capture [tCO2/yr]"] = self._params["Scale [tCO2/year]"] - self._params[
+            "Scale [tCO2/year]"
+        ] * (ev["Emitted tCO2eq/tCO2"] + tv["Emitted tCO2eq/tCO2"])
+
+        # Total Cost [$/tCO2 net removed]
+        v["Total Cost [$/tCO2 net removed]"] = v["Total Cost [$/tCO2]"] / (
+            1 - (ev["Emitted tCO2eq/tCO2"] + tv["Emitted tCO2eq/tCO2"])
+        )
+
+        return v
+
+    def _total_energy_block_costs_combined(self, ev, tv, cv):
         """ compute the total energy block costs
 
         Parameters
@@ -526,9 +605,12 @@ class DacModel(DacComponent):
         v["Total Power Capacity Required [MW]"] = ev["Plant Size [MW]"] + tv["Plant Size [MW]"]
 
         # Total Battery Capacity Required [MWh]
-        v["Total Battery Capacity Required [MWh]"] = (
-            ev["Battery Capacity Needed [MWh]"] + tv["Battery Capacity Needed [MWh]"]
-        )
+        if "Battery Capacity Needed [MWh]" in ev:
+            v["Total Battery Capacity Required [MWh]"] = (
+                ev["Battery Capacity Needed [MWh]"] + tv["Battery Capacity Needed [MWh]"]
+            )
+        else:
+            v["Total Battery Capacity Required [MWh]"] = 0
 
         # Total Capital Cost [M$]
         v["Total Capital Cost [M$]"] = cv["Total Capital Cost [M$]"]
@@ -536,11 +618,11 @@ class DacModel(DacComponent):
         # Capital Recovery [$/tCO2eq]
         v["Capital Recovery [$/tCO2eq]"] = cv["Capital Recovery [$/tCO2eq]"]
 
-        # Fixed O+M [$/tCO2eq]
-        v["Fixed O+M [$/tCO2eq]"] = cv["Fixed O+M [$/tCO2eq]"]
+        # Fixed O&M [$/tCO2eq]
+        v["Fixed O&M [$/tCO2eq]"] = cv["Fixed O&M [$/tCO2eq]"]
 
-        # Variable O+M [$/tCO2eq]
-        v["Variable O+M [$/tCO2eq]"] = cv["Variable O+M [$/tCO2eq]"]
+        # Variable O&M [$/tCO2eq]
+        v["Variable O&M [$/tCO2eq]"] = cv["Variable O&M [$/tCO2eq]"]
 
         # NG Cost [$/tCO2eq]
         v["Natural Gas Cost [$/tCO2eq]"] = (
@@ -550,8 +632,8 @@ class DacModel(DacComponent):
         # Total Cost [$/tCO2]
         v["Total Cost [$/tCO2]"] = (
             v["Capital Recovery [$/tCO2eq]"]
-            + v["Fixed O+M [$/tCO2eq]"]
-            + v["Variable O+M [$/tCO2eq]"]
+            + v["Fixed O&M [$/tCO2eq]"]
+            + v["Variable O&M [$/tCO2eq]"]
             + v["Natural Gas Cost [$/tCO2eq]"]
         )
 
@@ -574,9 +656,9 @@ class DacModel(DacComponent):
         tv = self._thermal.compute().values
         if self._electric._source == self._thermal._source:
             cv = self._combined_power_block_requirements(self._electric._source, ev, tv)
-            tev = self._total_energy_block_costs(ev, tv, cv)
+            tev = self._total_energy_block_costs_combined(ev, tv, cv)
         else:
-            raise ValueError("TODO: handle case with mismatched energy sources")
+            tev = self._total_energy_block_costs(ev, tv)
 
         dv = self._dac.compute().values
 
@@ -596,12 +678,12 @@ class DacModel(DacComponent):
             / self._params["Scale [tCO2/year]"]
         )
 
-        # Fixed O+M [$/tCO2eq]
-        v["Fixed O+M [$/tCO2eq]"] = tev["Fixed O+M [$/tCO2eq]"] + dv["Fixed O+M [$/tCO2eq]"]
+        # Fixed O&M [$/tCO2eq]
+        v["Fixed O&M [$/tCO2eq]"] = tev["Fixed O&M [$/tCO2eq]"] + dv["Fixed O&M [$/tCO2eq]"]
 
-        # Variable O+M [$/tCO2eq]
-        v["Variable O+M [$/tCO2eq]"] = (
-            tev["Variable O+M [$/tCO2eq]"] + dv["Variable O+M [$/tCO2eq]"]
+        # Variable O&M [$/tCO2eq]
+        v["Variable O&M [$/tCO2eq]"] = (
+            tev["Variable O&M [$/tCO2eq]"] + dv["Variable O&M [$/tCO2eq]"]
         )
 
         # Natural Gas Cost [$/tCO2]
@@ -610,8 +692,8 @@ class DacModel(DacComponent):
         # Total Cost [$/tCO2]
         v["Total Cost [$/tCO2]"] = (
             v["Capital Recovery [$/tCO2eq]"]
-            + v["Fixed O+M [$/tCO2eq]"]
-            + v["Variable O+M [$/tCO2eq]"]
+            + v["Fixed O&M [$/tCO2eq]"]
+            + v["Variable O&M [$/tCO2eq]"]
             + v["Natural Gas Cost [$/tCO2]"]
         )
 

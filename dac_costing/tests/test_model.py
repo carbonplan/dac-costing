@@ -21,7 +21,7 @@ def test_to_pandas():
     assert len(dac.series)
 
 
-@pytest.mark.xfail(reason="need to fix mismatched energy sources")
+@pytest.mark.xfail(reason="missing natural gas use in thermal block")
 def test_c1_natural_gas():
     params = {"Base Energy Requierement [MW]": 47}
     electric = EnergySection("NGCC w/ CCS", battery=None, **params)
@@ -56,7 +56,6 @@ def test_c2_solar():
     assert 470 <= dac_all.values["Total Cost [$/tCO2]"] <= 490
 
 
-@pytest.mark.xfail(reason="need to add advanced nuclear to energy sources")
 def test_c3_nuclear():
     params = {"Base Energy Requierement [MW]": 38}
     electric = EnergySection("Advanced Nuclear", battery=None, **params)
