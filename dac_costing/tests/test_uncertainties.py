@@ -31,5 +31,4 @@ def test_uncertainties(uparams):
 
     assert len(dac_all.compute().series)
     assert 220 <= dac_all.values["Total Cost [$/tCO2]"] <= 230
-    print(type(dac_all.values["Total Cost [$/tCO2]"]))
     assert isinstance(dac_all.values["Total Cost [$/tCO2]"], uncertainties.core.AffineScalarFunc)
