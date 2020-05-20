@@ -5,8 +5,8 @@
   "Total Capex [$]": 936,
   "Electric Power Requierement [MW]": 46.6,
   "Thermal [GJ/tCO2]": 6.64,
-  "Fixed O+M Costs [$/tCO2]": 34,
-  "Varible O+M Cost [$/tCO2]": 4,
+  "Fixed O&M Costs [$/tCO2]": 34,
+  "Varible O&M Cost [$/tCO2]": 4,
   "Economic Lifetime [years]": 20,
   "WACC [%]": 0.085,
   "Natural Gas Cost [$/mmBTU]": 3.43,
@@ -108,7 +108,7 @@
       "Total NAS Report [gCO2/kWh]": 0.0,
       "Data Planned Avaliability": 97.0,
       "Availability": 1.0,
-      "Scaling Factor": null,
+      "Scaling Factor": 0.6,
       "Capture Efficiency": 0.0
     },
     "Solar": {

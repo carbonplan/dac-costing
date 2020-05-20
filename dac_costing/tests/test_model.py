@@ -1,6 +1,6 @@
 import pytest
 
-from dac_costing.model import BatterySection, DacModel, DacSection, EnergySection
+from dac_costing.model import BatterySection, DacModel, DacSection, EnergySection, NgThermalSection
 
 
 def test_default_parameters():
@@ -21,13 +21,12 @@ def test_to_pandas():
     assert len(dac.series)
 
 
-@pytest.mark.xfail(reason="need to fix mismatched energy sources")
 def test_c1_natural_gas():
     params = {"Base Energy Requierement [MW]": 47}
     electric = EnergySection("NGCC w/ CCS", battery=None, **params)
 
-    params = {"Base Energy Requierement [MW]": 0}
-    thermal = EnergySection("Advanced NGCC", battery=None, **params)
+    params = {"Required Thermal Energy [GJ/tCO2]": 6.64}
+    thermal = NgThermalSection("Advanced NGCC", battery=None, **params)
 
     params = {"Total Capex [$]": 1029}
     dac = DacSection(**params)
@@ -56,7 +55,7 @@ def test_c2_solar():
     assert 470 <= dac_all.values["Total Cost [$/tCO2]"] <= 490
 
 
-@pytest.mark.xfail(reason="need to add advanced nuclear to energy sources")
+@pytest.mark.xfail(reason="Need custom electric/thermal blocks for nuclear to match spreadsheet")
 def test_c3_nuclear():
     params = {"Base Energy Requierement [MW]": 38}
     electric = EnergySection("Advanced Nuclear", battery=None, **params)
