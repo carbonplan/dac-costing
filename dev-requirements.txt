@@ -1,4 +1,6 @@
 pre-commit
 pytest
 pytest-cov
+uncertainties
+hypothesis
 -r requirements.txt
