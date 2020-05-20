@@ -1,9 +1,12 @@
 import json
 import os
+from collections import defaultdict
 
 import numpy as np
 import numpy_financial as npf
 import pandas as pd
+
+VALID_ENERGY_SOURCES = ["NGCC w/ CCS", "Advanced NGCC", "Solar", "Wind", "Advanced Nuclear"]
 
 # Constants
 HOURS_PER_DAY = 24
@@ -12,6 +15,7 @@ HOURS_PER_YEAR = DAYS_PER_YEAR * HOURS_PER_DAY
 MILLION = 1e6
 KW_TO_MW = 1000
 LB_TO_METRIC_TON = 0.000453592
+GJ_TO_MMBTU = 0.94709
 
 
 class DacComponent(object):
@@ -29,7 +33,7 @@ class DacComponent(object):
         self._params = self._default_params()
         self._params.update(params)
 
-        self.values = {}
+        self.values = defaultdict(float)
 
     def _default_params(self):
         """ load default parameters """
@@ -57,11 +61,10 @@ class DacComponent(object):
         rate = self._params["WACC [%]"]
         time = int(time)
 
-        vals = np.zeros(time)
-        vals[0] = (1 + rate) * (1 / time)
+        vals = [(1 + rate) * (1 / time)]
         for t in range(1, time):
-            vals[t] = np.sum(vals[:t]) * rate + (1 + rate) * (1 / time)
-        return vals.sum()
+            vals.append(np.sum(vals[:t]) * rate + (1 + rate) * (1 / time))
+        return np.array(vals).sum()
 
     def recovery_factor(self):
         """ calculate the capital recovery factor """
@@ -92,7 +95,7 @@ class BatterySection(DacComponent):
         e_vals : dict
             Values from the energy section that will use this battery.
         """
-        v = {}
+        v = defaultdict(float)
 
         # Battery Capacity [MWh]
         v["Battery Capacity [MWh]"] = e_vals["Base Energy Requierement [MW]"] * (
@@ -162,13 +165,15 @@ class EnergySection(DacComponent):
 
     def __init__(self, source, battery=None, **params):
 
+        if source not in VALID_ENERGY_SOURCES:
+            raise ValueError(
+                f"Invalid Energy Source: {source}, expected one of {VALID_ENERGY_SOURCES}"
+            )
         self._source = source
-        assert self._source in ["NGCC w/ CCS", "Advanced NGCC", "Solar", "Wind", "Advanced Nuclear"]
 
-        if isinstance(battery, BatterySection) or battery is None:
-            self.battery = battery
-        else:
-            raise TypeError("Expected a BatterySection")
+        if not (isinstance(battery, BatterySection) or battery is None):
+            TypeError(f"Expected a BatterySection, got {battery}")
+        self.battery = battery
 
         super().__init__(**params)
 
@@ -177,7 +182,7 @@ class EnergySection(DacComponent):
     def compute(self):
         """ compute the energy section values """
 
-        v = {}
+        v = defaultdict(float)
 
         # Operational Hours [h/yr]
         operational_hours = self._params["DAC Capacity Factor"] * HOURS_PER_YEAR
@@ -275,8 +280,8 @@ class EnergySection(DacComponent):
             v["Natural Gas Use [mmBTU/tCO2eq]"] * self._params["Natural Gas Cost [$/mmBTU]"]
         )
 
-        # Emitted tCO2eq/tCO2
-        v["Emitted tCO2eq/tCO2"] = (
+        # Emitted [tCO2eq/tCO2]
+        v["Emitted [tCO2eq/tCO2]"] = (
             v["Natural Gas Use [mmBTU/tCO2eq]"]
             * self._tech["Total CO2 eq [lb/mmbtu]"]
             * LB_TO_METRIC_TON
@@ -292,8 +297,37 @@ class EnergySection(DacComponent):
 
         # Total Cost [$/tCO2eq net]
         v["Total Cost [$/tCO2eq net]"] = v["Total Cost [$/tCO2eq gross]"] / (
-            1 - v["Emitted tCO2eq/tCO2"]
+            1 - v["Emitted [tCO2eq/tCO2]"]
         )
+
+        self.values.update(v)
+
+        return self
+
+
+class NgThermalSection(EnergySection):
+    def compute(self):
+
+        v = defaultdict(float)
+
+        nat_gas_mmbtu = (
+            self._params["Required Thermal Energy [GJ/tCO2]"]
+            * GJ_TO_MMBTU
+            * self._params["Scale [tCO2/year]"]
+        )
+        capacity = 1  # hardcoded
+        v["Natural Gas Use [mmBTU/tCO2eq]"] = nat_gas_mmbtu / (
+            capacity * self._params["Scale [tCO2/year]"]
+        )
+
+        # same as above
+        # Natural Gas Cost [$/tCO2eq]
+        v["Natural Gas Cost [$/tCO2eq]"] = (
+            v["Natural Gas Use [mmBTU/tCO2eq]"] * self._params["Natural Gas Cost [$/mmBTU]"]
+        )
+
+        # Assume 100% capture from oxy fired kiln
+        v["Emitted [tCO2eq/tCO2]"] = 0.0
 
         self.values.update(v)
 
@@ -315,7 +349,7 @@ class DacSection(DacComponent):
     def compute(self):
         """ compute the DAC section values """
 
-        v = {}
+        v = defaultdict(float)
 
         # Total Overnight Capital Cost [M$]
         v["Total Capital Cost [M$]"] = self._params["Total Capex [$]"]
@@ -353,7 +387,7 @@ class DacSection(DacComponent):
 
         # # Total Cost [$/tCO2 net removed]
         # v['Total Cost [$/tCO2 net removed]'] = v['Total Cost [$/tCO2]'] / (
-        #     1 - (ev['Emitted tCO2eq/tCO2'] + tv['Emitted tCO2eq/tCO2'])
+        #     1 - (ev['Emitted [tCO2eq/tCO2]'] + tv['Emitted [tCO2eq/tCO2]'])
         # )
 
         self.values.update(v)
@@ -403,7 +437,7 @@ class DacModel(DacComponent):
             Combined power block values
         """
 
-        v = {}
+        v = defaultdict(float)
 
         tech = self._params["Technology"][source]
 
@@ -526,7 +560,7 @@ class DacModel(DacComponent):
         v : dict
             Total energy block values
         """
-        v = {}
+        v = defaultdict(float)
 
         # Total Power Capacity Required [MW]
         v["Total Power Capacity Required [MW]"] = ev["Plant Size [MW]"] + tv["Plant Size [MW]"]
@@ -573,11 +607,11 @@ class DacModel(DacComponent):
         # Net Capture [tCO2/yr]
         v["Net Capture [tCO2/yr]"] = self._params["Scale [tCO2/year]"] - self._params[
             "Scale [tCO2/year]"
-        ] * (ev["Emitted tCO2eq/tCO2"] + tv["Emitted tCO2eq/tCO2"])
+        ] * (ev["Emitted [tCO2eq/tCO2]"] + tv["Emitted [tCO2eq/tCO2]"])
 
         # Total Cost [$/tCO2 net removed]
         v["Total Cost [$/tCO2 net removed]"] = v["Total Cost [$/tCO2]"] / (
-            1 - (ev["Emitted tCO2eq/tCO2"] + tv["Emitted tCO2eq/tCO2"])
+            1 - (ev["Emitted [tCO2eq/tCO2]"] + tv["Emitted [tCO2eq/tCO2]"])
         )
 
         return v
@@ -599,7 +633,7 @@ class DacModel(DacComponent):
         v : dict
             Total energy block values
         """
-        v = {}
+        v = defaultdict(float)
 
         # Total Power Capacity Required [MW]
         v["Total Power Capacity Required [MW]"] = ev["Plant Size [MW]"] + tv["Plant Size [MW]"]
@@ -640,11 +674,11 @@ class DacModel(DacComponent):
         # Net Capture [tCO2/yr]
         v["Net Capture [tCO2/yr]"] = self._params["Scale [tCO2/year]"] - self._params[
             "Scale [tCO2/year]"
-        ] * (ev["Emitted tCO2eq/tCO2"] + tv["Emitted tCO2eq/tCO2"])
+        ] * (ev["Emitted [tCO2eq/tCO2]"] + tv["Emitted [tCO2eq/tCO2]"])
 
         # Total Cost [$/tCO2 net removed]
         v["Total Cost [$/tCO2 net removed]"] = v["Total Cost [$/tCO2]"] / (
-            1 - (ev["Emitted tCO2eq/tCO2"] + tv["Emitted tCO2eq/tCO2"])
+            1 - (ev["Emitted [tCO2eq/tCO2]"] + tv["Emitted [tCO2eq/tCO2]"])
         )
 
         return v
@@ -662,7 +696,7 @@ class DacModel(DacComponent):
 
         dv = self._dac.compute().values
 
-        v = {}
+        v = defaultdict(float)
 
         # Total Capital Cost [M$]
         v["Total Capital Cost [M$]"] = (
