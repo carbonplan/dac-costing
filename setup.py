@@ -44,6 +44,7 @@ setup(
     include_package_data=True,
     python_requires=PYTHON_REQUIRES,
     install_requires=INSTALL_REQUIRES,
+    tests_requires=["pytest", "hypothesis", "uncertainties"],
     license="MIT",
     zip_safe=False,
     keywords="dac, carbon, climate",
