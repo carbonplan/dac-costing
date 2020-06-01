@@ -96,7 +96,7 @@ jobs:
           python -m pip list
       - name: Running Tests
         run: |
-          python -m pytest --mypy --flake8 --junitxml=test-reports/junit.xml --cov=./ --verbose ./dac-costing
+          python -m pytest --mypy --flake8 --junitxml=test-reports/junit.xml --cov=./ --verbose dac_costing
     #   - name: Upload coverage to Codecov
     #     uses: codecov/codecov-action@v1
     #     with:
