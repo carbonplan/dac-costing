@@ -18,16 +18,16 @@ def uparams():
 
 
 def test_uncertainties(uparams):
-    uparams["Base Energy Requierement [MW]"] = 47
-    electric = EnergySection("NGCC w/ CCS", battery=None, **uparams)
+    uparams["Base Energy Requirement [MW]"] = 47
+    electric = EnergySection(source="NGCC w/ CCS", battery=None, params=uparams)
 
     uparams["Required Thermal Energy [GJ/tCO2]"] = 6.64
-    thermal = NgThermalSection("Advanced NGCC", battery=None, **uparams)
+    thermal = NgThermalSection(source="Advanced NGCC", battery=None, params=uparams)
 
     uparams["Total Capex [$]"] = 1029
-    dac = DacSection(**uparams)
+    dac = DacSection(params=uparams)
 
-    dac_all = DacModel(electric, thermal, dac, **uparams)
+    dac_all = DacModel(electric=electric, thermal=thermal, dac=dac, params=uparams)
 
     assert len(dac_all.compute().series)
     assert 220 <= dac_all.values["Total Cost [$/tCO2]"] <= 230
