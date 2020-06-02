@@ -3,10 +3,10 @@
   "DAC Capacity Factor": 0.9,
   "DAC Section Lead Time [years]": 3,
   "Total Capex [$]": 936,
-  "Electric Power Requierement [MW]": 46.6,
+  "Electric Power Requirement [MW]": 46.6,
   "Thermal [GJ/tCO2]": 6.64,
   "Fixed O&M Costs [$/tCO2]": 34,
-  "Varible O&M Cost [$/tCO2]": 4,
+  "Variable O&M Cost [$/tCO2]": 4,
   "Economic Lifetime [years]": 20,
   "WACC [%]": 0.085,
   "Natural Gas Cost [$/mmBTU]": 3.43,
@@ -31,7 +31,7 @@
       "CO2 in CO2 eq [lbs/mmbtu]": null,
       "Total CO2 eq [lb/mmbtu]": 0.0,
       "Total NAS Report [gCO2/kWh]": 0.0,
-      "Data Planned Avaliability": 43.0,
+      "Data Planned Availability": 43.0,
       "Availability": 0.52,
       "Scaling Factor": 0.95,
       "Capture Efficiency": 0.0
@@ -56,7 +56,7 @@
       "CO2 in CO2 eq [lbs/mmbtu]": 117.0,
       "Total CO2 eq [lb/mmbtu]": 119.0,
       "Total NAS Report [gCO2/kWh]": 344.0,
-      "Data Planned Avaliability": 87.0,
+      "Data Planned Availability": 87.0,
       "Availability": 1.0,
       "Scaling Factor": 0.7,
       "Capture Efficiency": 0.0
@@ -81,7 +81,7 @@
       "CO2 in CO2 eq [lbs/mmbtu]": 117.0,
       "Total CO2 eq [lb/mmbtu]": 119.0,
       "Total NAS Report [gCO2/kWh]": 38.0,
-      "Data Planned Avaliability": 87.0,
+      "Data Planned Availability": 87.0,
       "Availability": 1.0,
       "Scaling Factor": 0.7,
       "Capture Efficiency": 0.9
@@ -106,7 +106,7 @@
       "CO2 in CO2 eq [lbs/mmbtu]": 0.0,
       "Total CO2 eq [lb/mmbtu]": 0.0,
       "Total NAS Report [gCO2/kWh]": 0.0,
-      "Data Planned Avaliability": 97.0,
+      "Data Planned Availability": 97.0,
       "Availability": 1.0,
       "Scaling Factor": 0.6,
       "Capture Efficiency": 0.0
@@ -131,7 +131,7 @@
       "CO2 in CO2 eq [lbs/mmbtu]": 0.0,
       "Total CO2 eq [lb/mmbtu]": 0.0,
       "Total NAS Report [gCO2/kWh]": 0.0,
-      "Data Planned Avaliability": 31.0,
+      "Data Planned Availability": 31.0,
       "Availability": 0.352,
       "Scaling Factor": 0.95,
       "Capture Efficiency": 0.0
@@ -156,7 +156,7 @@
       "CO2 in CO2 eq [lbs/mmbtu]": null,
       "Total CO2 eq [lb/mmbtu]": null,
       "Total NAS Report [gCO2/kWh]": null,
-      "Data Planned Avaliability": null,
+      "Data Planned Availability": null,
       "Availability": null,
       "Scaling Factor": 0.95,
       "Capture Efficiency": 0.0
@@ -181,7 +181,7 @@
       "CO2 in CO2 eq [lbs/mmbtu]": null,
       "Total CO2 eq [lb/mmbtu]": null,
       "Total NAS Report [gCO2/kWh]": null,
-      "Data Planned Avaliability": null,
+      "Data Planned Availability": null,
       "Availability": null,
       "Scaling Factor": null,
       "Capture Efficiency": 0.0
