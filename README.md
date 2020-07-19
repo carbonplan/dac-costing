@@ -1,4 +1,20 @@
-# Direct Air Capture + Energy Cost Analysis
+<img
+  src='https://carbonplan-assets.s3.amazonaws.com/monogram/dark-small.png'
+  height='48'
+/>
+
+# carbonplan / dac-costing
+
+**direct air capture + energy cost analysis**
+
+[![GitHub][github-badge]][github]
+![Build Status][]
+![MIT License][]
+
+[github]: https://github.com/carbonplan/dac-costing
+[github-badge]: https://flat.badgen.net/badge/-/github?icon=github&label
+[build status]: https://flat.badgen.net/github/checks/carbonplan/dac-costing
+[mit license]: https://flat.badgen.net/badge/license/MIT/blue
 
 A python module for estimating the cost of building and operating direct air capture facilities.
 
