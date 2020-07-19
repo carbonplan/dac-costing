@@ -10,7 +10,7 @@ with open("requirements.txt") as f:
 with open("README.md") as f:
     LONG_DESCRIPTION = f.read()
 
-PYTHON_REQUIRES = ">=3.6"
+PYTHON_REQUIRES = ">=3.7"
 
 description = (
     "A python module for estimating the cost of building and operating direct "
@@ -24,7 +24,6 @@ CLASSIFIERS = [
     "Intended Audience :: Science/Research",
     "Programming Language :: Python",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.6",
     "Programming Language :: Python :: 3.7",
     "Programming Language :: Python :: 3.8",
     "Topic :: Scientific/Engineering",
@@ -44,7 +43,7 @@ setup(
     include_package_data=True,
     python_requires=PYTHON_REQUIRES,
     install_requires=INSTALL_REQUIRES,
-    tests_requires=["pytest", "hypothesis", "uncertainties"],
+    tests_requires=["pytest", "mypy", "hypothesis", "uncertainties"],
     license="MIT",
     zip_safe=False,
     keywords="dac, carbon, climate",
