@@ -16,10 +16,7 @@
 [build status]: https://flat.badgen.net/github/checks/carbonplan/dac-costing
 [mit license]: https://flat.badgen.net/badge/license/MIT/blue
 
-A python module for estimating the cost of building and operating direct air capture facilities.
-
-[![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/carbonplan/dac-costing/master)
-![CI](https://github.com/carbonplan/dac-costing/workflows/CI/badge.svg)
+A python module for estimating the cost of building and operating direct air capture facilities. Try it on Binder: [![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/carbonplan/dac-costing/master)
 
 ## Documentation
 
