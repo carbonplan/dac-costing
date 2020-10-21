@@ -50,7 +50,9 @@ def get_sheet(sheet_name):
 
     gc = gspread.authorize(credentials)
 
-    wks = gc.open_by_key("1Dl3gJvxA-532Mnbo_hWcKelFU4TZ0NSjiort84j-6jk",)
+    wks = gc.open_by_key(
+        "1Dl3gJvxA-532Mnbo_hWcKelFU4TZ0NSjiort84j-6jk",
+    )
 
     sheet = wks.worksheet(sheet_name)
 

@@ -67,7 +67,7 @@ class DacComponent(object):
         return self
 
     def lead_time_mult(self, time) -> float:
-        """ replaces cells =Q5:AB158 in `WACC Table Project Lead Time`
+        """replaces cells =Q5:AB158 in `WACC Table Project Lead Time`
 
         TODO: needs better doc and review from Noah.
         """
@@ -96,7 +96,7 @@ class BatterySection(DacComponent):
     """
 
     def compute(self, e_vals):
-        """ compute the battery section values
+        """compute the battery section values
 
         Parameters
         ----------
@@ -438,7 +438,7 @@ class DacModel(DacComponent):
     dac: Optional[Type[DacSection]] = None
 
     def _combined_power_block_requirements(self, source, ev, tv) -> DefaultDict[str, float]:
-        """ compute the combined power block requirements
+        """compute the combined power block requirements
 
         Parameters
         ----------
@@ -556,7 +556,7 @@ class DacModel(DacComponent):
         return v
 
     def _total_energy_block_costs(self, ev, tv) -> DefaultDict[str, float]:
-        """ compute the total energy block costs
+        """compute the total energy block costs
 
         Parameters
         ----------
@@ -627,7 +627,7 @@ class DacModel(DacComponent):
         return v
 
     def _total_energy_block_costs_combined(self, ev, tv, cv) -> DefaultDict[str, float]:
-        """ compute the total energy block costs
+        """compute the total energy block costs
 
         Parameters
         ----------
