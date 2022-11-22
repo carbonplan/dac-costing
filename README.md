@@ -59,5 +59,5 @@ dac_all.compute().series
 ### Installing
 
 ```shell
-pip install git+git://github.com/carbonplan/dac-costing@master
+pip install git+git://github.com/carbonplan/dac-costing@main
 ```
