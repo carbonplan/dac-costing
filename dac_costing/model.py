@@ -21,7 +21,7 @@ GJ_TO_MMBTU = 0.94709
 
 
 def default_params() -> Dict:
-    """ load default parameters """
+    """load default parameters"""
     dir_path = os.path.dirname(os.path.realpath(__file__))
     with open(os.path.join(dir_path, "data", "parameters.json")) as f:
         return json.load(f)
@@ -56,13 +56,13 @@ class DacComponent(object):
 
     @property
     def series(self):
-        """ return a pandas.Series view of the components values """
+        """return a pandas.Series view of the components values"""
         if not self.values:
             self.compute()
         return pd.Series(self.values)
 
     def compute(self):
-        """ compute this components values """
+        """compute this components values"""
         raise NotImplementedError()
         return self
 
@@ -80,7 +80,7 @@ class DacComponent(object):
         return np.array(values).sum()
 
     def recovery_factor(self):
-        """ calculate the capital recovery factor """
+        """calculate the capital recovery factor"""
         return -npf.pmt(self.params["WACC [%]"], self.params["Economic Lifetime [years]"], 1)
 
 
@@ -187,7 +187,7 @@ class EnergySection(DacComponent):
         super().__post_init__()
 
     def compute(self):
-        """ compute the energy section values """
+        """compute the energy section values"""
 
         tech = self.params["Technology"][self.source]
 
@@ -372,7 +372,7 @@ class DacSection(DacComponent):
     """
 
     def compute(self):
-        """ compute the DAC section values """
+        """compute the DAC section values"""
 
         # Total Overnight Capital Cost [M$]
         self.values["Total Capital Cost [M$]"] = self.params["Total Capex [$]"]
@@ -694,7 +694,7 @@ class DacModel(DacComponent):
         return v
 
     def compute(self):
-        """ compute the composite DAC model's values """
+        """compute the composite DAC model's values"""
 
         ev = self.electric.compute().values
         tv = self.thermal.compute().values

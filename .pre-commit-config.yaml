@@ -1,30 +1,29 @@
-repos:
+ci:
+   autoupdate_schedule: quarterly
+   autofix_prs: false
 
--   repo: https://github.com/pre-commit/pre-commit-hooks
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v3.3.0
     hooks:
-    -   id: trailing-whitespace
-    -   id: end-of-file-fixer
-    -   id: check-docstring-first
-    -   id: check-json
-    -   id: check-yaml
+    - id: trailing-whitespace
+    - id: end-of-file-fixer
+    - id: check-docstring-first
+    - id: check-json
+    - id: check-yaml
 
--   repo: https://github.com/ambv/black
-    rev: 20.8b1
+  - repo: https://github.com/psf/black
+    rev: 22.10.0
     hooks:
-    - id: black
-      args: ["--line-length", "100"]
+      - id: black
+        args: ["--line-length", "100"]
 
--   repo: https://gitlab.com/pycqa/flake8
-    rev: 3.8.4
+  - repo: https://github.com/PyCQA/flake8
+    rev: 5.0.4
     hooks:
-    - id: flake8
+      - id: flake8
 
--   repo: https://github.com/asottile/seed-isort-config
-    rev: v2.2.0
+  - repo: https://github.com/PyCQA/isort
+    rev: 5.10.1
     hooks:
-    -   id: seed-isort-config
--   repo: https://github.com/pre-commit/mirrors-isort
-    rev: v5.6.4
-    hooks:
-    -   id: isort
+      - id: isort
