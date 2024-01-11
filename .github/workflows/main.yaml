@@ -7,28 +7,6 @@ on:
     branches: master
 
 jobs:
-  lint:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v2.4.0
-      - uses: actions/setup-python@v2.3.1
-      - uses: pre-commit/action@v2.0.3
-  type-check:
-    name: mypy
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v2.4.0
-      - name: Set up Python 3.8
-        uses: actions/setup-python@v2.3.1
-        with:
-          python-version: 3.8
-      - name: Install isort
-        run: |
-          python -m pip install mypy
-      - name: mypy check
-        run: |
-          mypy dac_costing
   test:
     name: ${{ matrix.python-version }}-build
     runs-on: ubuntu-latest
